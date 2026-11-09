@@ -4,8 +4,10 @@ from datetime import datetime
 from dataclasses import dataclass, asdict
 from strands import Agent, tool
 from strands.multiagent.a2a import A2AServer
+from strands.models.openai import OpenAIModel
 from strands.hooks import AfterInvocationEvent, HookProvider, HookRegistry
 from tinydb import TinyDB
+
 
 @dataclass
 class Stats:
@@ -16,10 +18,12 @@ class Stats:
     wisdom: int
     charisma: int
 
+
 @dataclass
 class InventoryItem:
     item_name: str
     quantity: int
+
 
 @dataclass
 class Character:
@@ -38,16 +42,22 @@ class Character:
         if self.created_at is None:
             self.created_at = datetime.now().isoformat()
 
+
 # The characters live in a local TinyDB file. The tools only go through save_character
 # and load_characters, so changing the storage means changing these two functions.
-CHARACTERS_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "characters.json")
-characters_db = TinyDB(CHARACTERS_DB, indent=4, separators=(',', ': '))
+CHARACTERS_DB = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "characters.json"
+)
+characters_db = TinyDB(CHARACTERS_DB, indent=4, separators=(",", ": "))
+
 
 def save_character(record: dict) -> None:
     characters_db.insert(record)
 
+
 def load_characters() -> list[dict]:
     return characters_db.all()
+
 
 @tool
 def find_character_by_name(name: str) -> dict:
@@ -79,8 +89,11 @@ def find_character_by_name(name: str) -> dict:
         raise ValueError(f"Character with name {name!r} not found")
 
     character = result[0]
-    print(f"✅ Found character: {character['name']} (ID: {character['character_id']}, {character['character_class']} {character['race']})")
+    print(
+        f"✅ Found character: {character['name']} (ID: {character['character_id']}, {character['character_class']} {character['race']})"
+    )
     return character
+
 
 @tool
 def list_all_characters() -> list[dict]:
@@ -116,14 +129,11 @@ def list_all_characters() -> list[dict]:
 
     return all_chars
 
+
 @tool
 def create_character(
-    name: str,
-    character_class: str,
-    race: str,
-    gender: str,
-    stats_dict: dict[str, int]
-    ) -> dict:
+    name: str, character_class: str, race: str, gender: str, stats_dict: dict[str, int]
+) -> dict:
     """Create a new character and save it to the database.
 
     Use it once per new character, after the ability scores have been decided
@@ -158,12 +168,12 @@ def create_character(
     """
     character_id = str(uuid.uuid4())
     stats = Stats(
-        strength=stats_dict.get('strength', 10),
-        dexterity=stats_dict.get('dexterity', 10),
-        constitution=stats_dict.get('constitution', 10),
-        intelligence=stats_dict.get('intelligence', 10),
-        wisdom=stats_dict.get('wisdom', 10),
-        charisma=stats_dict.get('charisma', 10),
+        strength=stats_dict.get("strength", 10),
+        dexterity=stats_dict.get("dexterity", 10),
+        constitution=stats_dict.get("constitution", 10),
+        intelligence=stats_dict.get("intelligence", 10),
+        wisdom=stats_dict.get("wisdom", 10),
+        charisma=stats_dict.get("charisma", 10),
     )
     character = Character(
         character_id=character_id,
@@ -181,8 +191,23 @@ def create_character(
     )
     record = asdict(character)
     save_character(record)
-    print(f"✅ Created character {name} ({character_class} {race}) with id {character_id}")
+    print(
+        f"✅ Created character {name} ({character_class} {race}) with id {character_id}"
+    )
     return record
+
+
+def create_model() -> OpenAIModel:
+    """DeepSeek through its OpenAI-compatible API (needs DEEPSEEK_API_KEY)."""
+    return OpenAIModel(
+        client_args={
+            "api_key": os.environ["DEEPSEEK_API_KEY"],
+            "base_url": "https://api.deepseek.com",
+        },
+        model_id="deepseek-flash",
+        params={"extra_body": {"thinking": {"type": "disabled"}}},
+    )
+
 
 class NewlineAfterTurn(HookProvider):
     """Ends every answer with a newline. The streamed text never has one, so without it the
@@ -191,8 +216,13 @@ class NewlineAfterTurn(HookProvider):
     def register_hooks(self, registry: HookRegistry) -> None:
         registry.add_callback(AfterInvocationEvent, lambda event: print(flush=True))
 
+
 def create_agent(context_id: str) -> Agent:
     return Agent(
+        model=create_model(),
+        tools=[create_character, find_character_by_name, list_all_characters],
+        name="Character Agent",
+        description="Character management for a fantasy role-playing game: creates characters (ability scores rolled 4d6 drop lowest), stores them, finds and lists them.",
         # TODO: Step 1 - Add the create_character, find_character_by_name and list_all_characters tools to the agent
         # TODO: Step 2 - Add the name "Character Agent" to the agent
         # TODO: Step 3 - Add the description "Character management for a fantasy role-playing game: creates characters (ability scores rolled 4d6 drop lowest), stores them, finds and lists them." to the agent
@@ -202,8 +232,14 @@ Confirm creations and summarize found characters briefly: class, race, key stats
         hooks=[NewlineAfterTurn()],
     )
 
-# TODO: Step 4 - Create an A2AServer with the create_agent factory on port 8001
 
+# TODO: Step 4 - Create an A2AServer with the create_agent factory on port 8001
+a2a_server = A2AServer(
+    agent_factory=create_agent,
+    host="0.0.0.0",
+    port=8001,
+)
 if __name__ == "__main__":
     # TODO: Step 5 - Start the A2A server
-    pass
+
+    a2a_server.serve()
