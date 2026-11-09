@@ -1,15 +1,18 @@
 import random
 import logging
+from fastmcp import FastMCP
+
 # TODO: Step 1 - Import FastMCP from mcp.server
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# TODO: Step 1 - Create an MCP server on port 8002
-mcp = FastMCP(
-    # port=
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
+# TODO: Step 1 - Create an MCP server on port 8002
+mcp = FastMCP("dice-roll")
+
 
 # TODO: Step 2 - Add the decorator to expose roll_dice as an MCP tool
+@mcp.tool()
 def roll_dice(faces: int = 6) -> int:
     """Roll one die with a given number of faces and return the result.
 
@@ -39,6 +42,8 @@ def roll_dice(faces: int = 6) -> int:
 
     return result
 
+
 if __name__ == "__main__":
     print("Starting Dice Roll MCP Server...")
     # TODO: Step 3 - Run the MCP server with the streamable-http transport
+    mcp.run(transport="http", port=8002)
